@@ -8,9 +8,18 @@
         <link rel="stylesheet" href="main.css">
     </head>
     <body>
-
-        <div class="booth">
-            <video id="video" width="400" height="300" autoplay playsinline muted></video>
+        <div class="video-container">
+            <video id="video" autoplay playsinline muted></video>
+            <div class="status" id="status" style="display: none;">
+                <div class="status-dot"></div>
+                <span>Connected</span>
+            </div>
+            <div class="controls">
+                <button class="btn btn-stop" id="stopBtn">
+                    <div class="stop-icon"></div>
+                    Stop Video
+                </button>
+            </div>
         </div>
 
         <script src="video.js"></script>
