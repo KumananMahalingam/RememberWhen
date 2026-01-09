@@ -1,0 +1,26 @@
+{
+  "name": "memory-aid-system",
+  "version": "1.0.0",
+  "description": "Memory Aid System for dementia patients with Backboard API integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "memory-aid",
+    "dementia",
+    "backboard",
+    "speech-recognition"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

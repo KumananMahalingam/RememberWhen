@@ -1,7 +1,5 @@
 // Configuration
-const API_KEY = 'espr_kzjvp6QURW_WrBrSnV5_dGsIz6jKK4VGudZhn4mIbQc';
-const ASSISTANT_ID = ''; // Will be set when created
-const API_BASE = 'http://localhost:3000/api'; // Your backend server
+const API_BASE = 'http://localhost:3000/api';
 
 // State
 let stream = null;
@@ -11,6 +9,7 @@ let isListening = false;
 let recognizedPerson = null;
 let transcripts = [];
 let interimTranscript = '';
+let assistantId = localStorage.getItem('assistantId') || '';
 
 // Known people (load from storage or default)
 let knownPeople = JSON.parse(localStorage.getItem('knownPeople')) || [
@@ -19,7 +18,7 @@ let knownPeople = JSON.parse(localStorage.getItem('knownPeople')) || [
         name: 'Sarah',
         relationship: 'Daughter',
         voiceId: 'voice_sarah_001',
-        threadId: '' // Will be set when thread is created
+        threadId: localStorage.getItem('sarah_thread_id') || ''
     }
 ];
 
@@ -49,10 +48,20 @@ const dismissBtn = document.getElementById('dismissBtn');
 // Initialize
 init();
 
-function init() {
+async function init() {
     setupEventListeners();
     renderPeopleList();
     initSpeechRecognition();
+
+    // Create assistant if doesn't exist
+    if (!assistantId) {
+        await createAssistant();
+    }
+
+    // Create thread for Sarah if doesn't exist
+    if (knownPeople[0] && !knownPeople[0].threadId) {
+        await createThreadForPerson(knownPeople[0]);
+    }
 }
 
 function setupEventListeners() {
@@ -92,6 +101,8 @@ async function startCamera() {
         if (knownPeople.length > 0) {
             peopleHint.style.display = 'block';
         }
+
+        console.log('Camera started successfully');
 
     } catch (error) {
         console.error('Error accessing camera:', error);
@@ -321,7 +332,7 @@ function renderPeopleList() {
     savePeople();
 }
 
-function handleAddPerson(e) {
+async function handleAddPerson(e) {
     e.preventDefault();
 
     const name = document.getElementById('personNameInput').value.trim();
@@ -341,7 +352,7 @@ function handleAddPerson(e) {
     renderPeopleList();
 
     // Create thread in Backboard
-    createThreadForPerson(newPerson);
+    await createThreadForPerson(newPerson);
 
     // Reset form and close modal
     addPersonForm.reset();
@@ -382,21 +393,24 @@ async function fetchPersonContext(person) {
     loadingOverlay.style.display = 'block';
 
     try {
-        // In production, call your backend API
-        // const response = await fetch(`${API_BASE}/message/${person.threadId}`, {...});
+        const response = await fetch(`${API_BASE}/person-context/${person.threadId}`);
+        const data = await response.json();
 
-        // Demo data for now
-        setTimeout(() => {
-            displayPersonInfo({
-                ...person,
-                lastVisit: '2 days ago (Thursday)',
-                recentContext: 'Talked about Emma\'s school play where she played a flower. Lucas lost his first tooth yesterday.',
-                confidence: 0.95
-            });
-            loadingOverlay.style.display = 'none';
-        }, 1000);
+        displayPersonInfo({
+            ...person,
+            lastVisit: 'Recently',
+            recentContext: data.content || 'No recent context available',
+            confidence: 0.95
+        });
     } catch (error) {
         console.error('Error fetching context:', error);
+        displayPersonInfo({
+            ...person,
+            lastVisit: 'Unknown',
+            recentContext: 'Error retrieving memory context',
+            confidence: 0.5
+        });
+    } finally {
         loadingOverlay.style.display = 'none';
     }
 }
@@ -411,44 +425,113 @@ function displayPersonInfo(person) {
     personOverlay.style.display = 'block';
 }
 
-// Backboard API Functions (require backend server)
+// Backboard API Functions
+async function createAssistant() {
+    try {
+        console.log('Creating assistant...');
+        const response = await fetch(`${API_BASE}/create-assistant`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: "Memory Aid Assistant",
+                description: "You help patients remember people and conversations. Be warm, patient, and reassuring."
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.assistant_id) {
+            assistantId = data.assistant_id;
+            localStorage.setItem('assistantId', assistantId);
+            console.log('Assistant created:', assistantId);
+        }
+    } catch (error) {
+        console.error('Error creating assistant:', error);
+    }
+}
+
 async function createThreadForPerson(person) {
-    console.log('Creating thread for:', person.name);
-    // In production with backend:
-    // const response = await fetch(`${API_BASE}/create-thread/${ASSISTANT_ID}`, {
-    //     method: 'POST',
-    //     headers: { 'Content-Type': 'application/json' },
-    //     body: JSON.stringify({
-    //         metadata_: {
-    //             person_name: person.name,
-    //             relationship: person.relationship,
-    //             voice_id: person.voiceId
-    //         }
-    //     })
-    // });
-    // const data = await response.json();
-    // person.threadId = data.thread_id;
-    // savePeople();
+    if (!assistantId) {
+        console.error('No assistant ID available');
+        return;
+    }
+
+    try {
+        console.log('Creating thread for:', person.name);
+        const response = await fetch(`${API_BASE}/create-thread/${assistantId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                metadata_: {
+                    person_name: person.name,
+                    relationship: person.relationship,
+                    voice_id: person.voiceId
+                }
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.thread_id) {
+            person.threadId = data.thread_id;
+            savePeople();
+
+            // Store thread ID for Sarah specifically
+            if (person.name === 'Sarah') {
+                localStorage.setItem('sarah_thread_id', data.thread_id);
+            }
+
+            console.log('Thread created:', data.thread_id);
+
+            // Add initial context
+            await addInitialContext(person);
+        }
+    } catch (error) {
+        console.error('Error creating thread:', error);
+    }
+}
+
+async function addInitialContext(person) {
+    if (!person.threadId) return;
+
+    try {
+        const context = `${person.name} is the patient's ${person.relationship.toLowerCase()}. This is their initial profile setup.`;
+
+        await fetch(`${API_BASE}/add-initial-context/${person.threadId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: person.name,
+                context: context
+            })
+        });
+
+        console.log('Initial context added for:', person.name);
+    } catch (error) {
+        console.error('Error adding initial context:', error);
+    }
 }
 
 async function storeTranscriptToBackboard(threadId, text, speaker) {
-    console.log('Storing transcript:', text);
-    // In production with backend:
-    // await fetch(`${API_BASE}/message/${threadId}`, {
-    //     method: 'POST',
-    //     headers: { 'Content-Type': 'application/json' },
-    //     body: JSON.stringify({
-    //         content: text,
-    //         memory: 'Auto',
-    //         send_to_llm: 'false',
-    //         metadata: JSON.stringify({ timestamp: new Date().toISOString(), speaker })
-    //     })
-    // });
+    try {
+        await fetch(`${API_BASE}/store-conversation/${threadId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: text,
+                speaker: speaker
+            })
+        });
+
+        console.log('Transcript stored:', text);
+    } catch (error) {
+        console.error('Error storing transcript:', error);
+    }
 }
 
 // Demo: Simulate person detection after 5 seconds
 setTimeout(() => {
-    if (isStreaming && knownPeople.length > 0) {
+    if (isStreaming && knownPeople.length > 0 && knownPeople[0].threadId) {
         console.log('Demo: Simulating person detection...');
         selectPerson(knownPeople[0]);
     }
