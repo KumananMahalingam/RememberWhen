@@ -1,27 +1,105 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Document</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Aid System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Video Section -->
+        <div class="video-section">
+            <video id="video" autoplay playsinline></video>
 
-        <link rel="stylesheet" href="main.css">
-    </head>
-    <body>
-        <div class="video-container">
-            <video id="video" autoplay playsinline muted></video>
-            <div class="status" id="status" style="display: none;">
-                <div class="status-dot"></div>
-                <span>Connected</span>
+            <!-- Person Info Overlay -->
+            <div class="overlay-card" id="overlayCard">
+                <div class="person-header">
+                    <div class="avatar" id="avatar">👤</div>
+                    <div>
+                        <h2 class="person-name" id="personName">Loading...</h2>
+                        <p class="person-relationship" id="relationship">...</p>
+                    </div>
+                </div>
+
+                <div class="info-section">
+                    <div class="info-item">
+                        <span class="info-label">Last Visit:</span>
+                        <span class="info-value" id="lastVisit">...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Recent Context:</span>
+                        <p class="context-text" id="recentContext">...</p>
+                    </div>
+                </div>
+
+                <div class="confidence-badge" id="confidence">
+                    <span class="confidence-dot"></span>
+                    <span id="confidenceText">Identifying...</span>
+                </div>
             </div>
+
+            <!-- Status Indicator -->
+            <div class="status" id="status">
+                <div class="status-dot"></div>
+                <span>System Active</span>
+            </div>
+
+            <!-- Controls -->
             <div class="controls">
                 <button class="btn btn-stop" id="stopBtn">
                     <div class="stop-icon"></div>
-                    Stop Video
+                    Stop System
+                </button>
+                <button class="btn btn-record" id="recordBtn" style="display:none;">
+                    <div class="record-icon"></div>
+                    Recording
                 </button>
             </div>
         </div>
 
-        <script src="video.js"></script>
-    </body>
+        <!-- Sidebar Panel -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1>Memory Aid</h1>
+                <p>Real-time visitor recognition</p>
+            </div>
+
+            <!-- Setup Section -->
+            <div class="setup-section">
+                <h3>Configuration</h3>
+                <div class="input-group">
+                    <label>Backboard API Key</label>
+                    <input type="password" id="apiKey" placeholder="espr_...">
+                </div>
+                <div class="input-group">
+                    <label>Assistant ID</label>
+                    <input type="text" id="assistantId" placeholder="asst_...">
+                </div>
+                <div class="input-group">
+                    <label>Thread ID (Sarah)</label>
+                    <input type="text" id="threadId" placeholder="thread_...">
+                </div>
+                <button class="btn btn-primary" id="saveConfig">Save Configuration</button>
+            </div>
+
+            <!-- Quick Setup -->
+            <div class="setup-section">
+                <h3>Quick Setup</h3>
+                <button class="btn btn-secondary" id="createAssistant">Create Assistant</button>
+                <button class="btn btn-secondary" id="createThread">Create Thread for Sarah</button>
+            </div>
+
+            <!-- Activity Log -->
+            <div class="activity-log">
+                <h3>Activity Log</h3>
+                <div id="logContainer" class="log-container">
+                    <p class="log-item">System initialized...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
 </html>
