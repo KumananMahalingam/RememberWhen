@@ -1,212 +1,455 @@
 // Configuration
-let config = {
-    apiKey: 'espr_kzjvp6QURW_WrBrSnV5_dGsIz6jKK4VGudZhn4mIbQc',
-    assistantId: '',
-    threadId: ''
-};
-
-// DOM Elements
-const video = document.getElementById('video');
-const overlayCard = document.getElementById('overlayCard');
-const personName = document.getElementById('personName');
-const relationship = document.getElementById('relationship');
-const lastVisit = document.getElementById('lastVisit');
-const recentContext = document.getElementById('recentContext');
-const confidenceText = document.getElementById('confidenceText');
-const stopBtn = document.getElementById('stopBtn');
-const saveConfigBtn = document.getElementById('saveConfig');
-const createAssistantBtn = document.getElementById('createAssistant');
-const createThreadBtn = document.getElementById('createThread');
-const logContainer = document.getElementById('logContainer');
-const status = document.getElementById('status');
+const API_KEY = 'espr_kzjvp6QURW_WrBrSnV5_dGsIz6jKK4VGudZhn4mIbQc';
+const ASSISTANT_ID = ''; // Will be set when created
+const API_BASE = 'http://localhost:3000/api'; // Your backend server
 
 // State
 let stream = null;
-let mediaRecorder = null;
-let audioChunks = [];
-let isRecording = false;
+let recognition = null;
+let isStreaming = false;
+let isListening = false;
+let recognizedPerson = null;
+let transcripts = [];
+let interimTranscript = '';
+
+// Known people (load from storage or default)
+let knownPeople = JSON.parse(localStorage.getItem('knownPeople')) || [
+    {
+        id: 'sarah_001',
+        name: 'Sarah',
+        relationship: 'Daughter',
+        voiceId: 'voice_sarah_001',
+        threadId: '' // Will be set when thread is created
+    }
+];
+
+// DOM Elements
+const video = document.getElementById('video');
+const statusBadge = document.getElementById('statusBadge');
+const personOverlay = document.getElementById('personOverlay');
+const loadingOverlay = document.getElementById('loadingOverlay');
+const placeholder = document.getElementById('placeholder');
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const micBtn = document.getElementById('micBtn');
+const clearBtn = document.getElementById('clearBtn');
+const addPersonBtn = document.getElementById('addPersonBtn');
+const peopleList = document.getElementById('peopleList');
+const peopleHint = document.getElementById('peopleHint');
+const transcriptList = document.getElementById('transcriptList');
+const transcriptEmpty = document.getElementById('transcriptEmpty');
+const transcriptScroll = document.getElementById('transcriptScroll');
+const listeningStatus = document.getElementById('listeningStatus');
+const addPersonModal = document.getElementById('addPersonModal');
+const addPersonForm = document.getElementById('addPersonForm');
+const modalClose = document.getElementById('modalClose');
+const modalCancel = document.getElementById('modalCancel');
+const dismissBtn = document.getElementById('dismissBtn');
 
 // Initialize
 init();
 
 function init() {
-    startCamera();
-    loadConfig();
     setupEventListeners();
-    log('System initialized', 'info');
+    renderPeopleList();
+    initSpeechRecognition();
 }
 
 function setupEventListeners() {
-    stopBtn.addEventListener('click', stopSystem);
-    saveConfigBtn.addEventListener('click', saveConfiguration);
-    createAssistantBtn.addEventListener('click', () => {
-        log('Note: API calls need a backend server (CORS)', 'error');
-        log('For now, manually enter Assistant ID from Backboard dashboard', 'info');
-    });
-    createThreadBtn.addEventListener('click', () => {
-        log('Note: API calls need a backend server (CORS)', 'error');
-        log('For now, manually enter Thread ID from Backboard dashboard', 'info');
-    });
+    startBtn.addEventListener('click', startCamera);
+    stopBtn.addEventListener('click', stopCamera);
+    micBtn.addEventListener('click', toggleListening);
+    clearBtn.addEventListener('click', clearTranscripts);
+    addPersonBtn.addEventListener('click', () => addPersonModal.style.display = 'flex');
+    modalClose.addEventListener('click', () => addPersonModal.style.display = 'none');
+    modalCancel.addEventListener('click', () => addPersonModal.style.display = 'none');
+    addPersonForm.addEventListener('submit', handleAddPerson);
+    dismissBtn.addEventListener('click', () => personOverlay.style.display = 'none');
 }
 
 // Camera Functions
 async function startCamera() {
     try {
         stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            },
+            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
             audio: true
         });
 
         video.srcObject = stream;
-        status.style.display = 'flex';
-        log('Camera and microphone started', 'success');
+        placeholder.style.display = 'none';
+        statusBadge.style.display = 'flex';
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-flex';
+        micBtn.disabled = false;
+        isStreaming = true;
 
-        // Start audio recording for speech detection
-        startAudioRecording();
+        // Auto-start listening
+        if (recognition) {
+            startListening();
+        }
+
+        // Show hint
+        if (knownPeople.length > 0) {
+            peopleHint.style.display = 'block';
+        }
+
     } catch (error) {
-        log('Error accessing camera/microphone: ' + error.message, 'error');
+        console.error('Error accessing camera:', error);
+        alert('Could not access camera or microphone: ' + error.message);
     }
 }
 
-function stopSystem() {
+function stopCamera() {
     if (stream) {
         stream.getTracks().forEach(track => track.stop());
         video.srcObject = null;
-        status.style.display = 'none';
-        log('System stopped', 'info');
     }
-    if (mediaRecorder && isRecording) {
-        mediaRecorder.stop();
-        isRecording = false;
+
+    if (recognition && isListening) {
+        stopListening();
     }
+
+    placeholder.style.display = 'flex';
+    statusBadge.style.display = 'none';
+    startBtn.style.display = 'inline-flex';
+    stopBtn.style.display = 'none';
+    micBtn.disabled = true;
+    isStreaming = false;
+    peopleHint.style.display = 'none';
+    personOverlay.style.display = 'none';
 }
 
-// Audio Recording
-function startAudioRecording() {
-    try {
-        const audioStream = new MediaStream(stream.getAudioTracks());
-        mediaRecorder = new MediaRecorder(audioStream);
+// Speech Recognition
+function initSpeechRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-        mediaRecorder.ondataavailable = (event) => {
-            audioChunks.push(event.data);
-        };
+    if (!SpeechRecognition) {
+        console.error('Speech recognition not supported');
+        return;
+    }
 
-        mediaRecorder.onstop = async () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            audioChunks = [];
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
 
-            // Process audio (simulated for now)
-            processAudio(audioBlob);
+    recognition.onresult = (event) => {
+        let interim = '';
 
-            // Restart recording for continuous monitoring
-            if (stream && isRecording) {
-                setTimeout(() => {
-                    audioChunks = [];
-                    mediaRecorder.start();
-                    setTimeout(() => {
-                        if (mediaRecorder.state === 'recording') {
-                            mediaRecorder.stop();
-                        }
-                    }, 5000);
-                }, 1000);
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            const transcript = result[0].transcript;
+
+            if (result.isFinal) {
+                addTranscript(transcript.trim(), recognizedPerson?.name || 'Unknown');
+                interimTranscript = '';
+
+                // Store to Backboard if person is recognized
+                if (recognizedPerson?.threadId) {
+                    storeTranscriptToBackboard(recognizedPerson.threadId, transcript.trim(), recognizedPerson.name);
+                }
+            } else {
+                interim += transcript;
             }
-        };
+        }
 
-        // Record in 5-second chunks
-        mediaRecorder.start();
-        isRecording = true;
-        setTimeout(() => {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
+        if (interim) {
+            interimTranscript = interim;
+            renderTranscripts();
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+    };
+
+    recognition.onend = () => {
+        if (isListening) {
+            try {
+                recognition.start();
+            } catch (e) {
+                console.error('Failed to restart recognition:', e);
             }
-        }, 5000);
+        }
+    };
+}
 
-        log('Audio monitoring started', 'success');
-    } catch (error) {
-        log('Error starting audio recording: ' + error.message, 'error');
+function startListening() {
+    if (recognition) {
+        try {
+            recognition.start();
+            isListening = true;
+            updateListeningStatus();
+            micBtn.innerHTML = '<span>🎤</span> Mute Mic';
+        } catch (e) {
+            console.error('Failed to start recognition:', e);
+        }
     }
 }
 
-function processAudio(audioBlob) {
-    // Simulate speaker detection
-    const speakerId = detectSpeaker(audioBlob);
-
-    if (speakerId === 'voice_sarah_001') {
-        log('Sarah detected! Showing info...', 'info');
-        // Show demo data instead of API call
-        displayPersonInfo({
-            name: "Sarah",
-            relationship: "Daughter",
-            lastVisit: "2 days ago (Thursday)",
-            context: "Talked about Emma's school play where she played a flower. Lucas lost his first tooth.",
-            confidence: 0.95
-        });
+function stopListening() {
+    if (recognition) {
+        recognition.stop();
+        isListening = false;
+        updateListeningStatus();
+        micBtn.innerHTML = '<span>🔇</span> Unmute Mic';
     }
 }
 
-function detectSpeaker(audioBlob) {
-    // Simulated speaker detection
-    const random = Math.random();
-    if (random > 0.7) {
-        return 'voice_sarah_001';
-    }
-    return 'unknown';
-}
-
-// UI Functions
-function displayPersonInfo(info) {
-    personName.textContent = info.name;
-    relationship.textContent = info.relationship;
-    lastVisit.textContent = info.lastVisit;
-    recentContext.textContent = info.context;
-    confidenceText.textContent = `${Math.round(info.confidence * 100)}% Match`;
-
-    overlayCard.classList.add('active');
-}
-
-function log(message, type = 'info') {
-    const logItem = document.createElement('p');
-    logItem.className = `log-item ${type}`;
-    logItem.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
-    logContainer.insertBefore(logItem, logContainer.firstChild);
-
-    // Keep only last 50 logs
-    while (logContainer.children.length > 50) {
-        logContainer.removeChild(logContainer.lastChild);
+function toggleListening() {
+    if (isListening) {
+        stopListening();
+    } else {
+        startListening();
     }
 }
 
-// Configuration Management
-function saveConfiguration() {
-    config.apiKey = document.getElementById('apiKey').value;
-    config.assistantId = document.getElementById('assistantId').value;
-    config.threadId = document.getElementById('threadId').value;
-
-    localStorage.setItem('memoryAidConfig', JSON.stringify(config));
-    log('Configuration saved', 'success');
-}
-
-function loadConfig() {
-    const saved = localStorage.getItem('memoryAidConfig');
-    if (saved) {
-        config = JSON.parse(saved);
-        document.getElementById('apiKey').value = config.apiKey || '';
-        document.getElementById('assistantId').value = config.assistantId || '';
-        document.getElementById('threadId').value = config.threadId || '';
+function updateListeningStatus() {
+    if (isListening) {
+        listeningStatus.innerHTML = '<span>🎤</span><span>Listening</span>';
+        listeningStatus.classList.add('active');
+    } else {
+        listeningStatus.innerHTML = '<span>🔇</span><span>Not listening</span>';
+        listeningStatus.classList.remove('active');
     }
 }
 
-// Demo Mode - Simulate Sarah appearing after 5 seconds
-setTimeout(() => {
-    log('Demo: Simulating Sarah detection...', 'info');
-    displayPersonInfo({
-        name: "Sarah",
-        relationship: "Daughter",
-        lastVisit: "2 days ago (Thursday)",
-        context: "Talked about Emma's school play where she played a flower. Lucas lost his first tooth.",
-        confidence: 0.95
+// Transcripts
+function addTranscript(text, speaker) {
+    const transcript = {
+        id: Date.now(),
+        text: text,
+        timestamp: new Date(),
+        speaker: speaker
+    };
+    transcripts.push(transcript);
+    renderTranscripts();
+}
+
+function renderTranscripts() {
+    if (transcripts.length === 0 && !interimTranscript) {
+        transcriptEmpty.style.display = 'block';
+        transcriptList.innerHTML = '';
+        return;
+    }
+
+    transcriptEmpty.style.display = 'none';
+
+    let html = '';
+    transcripts.forEach(t => {
+        const time = formatTime(t.timestamp);
+        html += `
+            <div class="transcript-item">
+                <div class="transcript-meta">
+                    <span class="transcript-speaker">${t.speaker}</span>
+                    <span class="transcript-time">${time}</span>
+                </div>
+                <p class="transcript-text">${t.text}</p>
+            </div>
+        `;
     });
+
+    if (interimTranscript) {
+        html += `
+            <div class="transcript-item transcript-interim">
+                <div class="transcript-meta">
+                    <span class="transcript-speaker">Speaking...</span>
+                </div>
+                <p class="transcript-text">${interimTranscript}</p>
+            </div>
+        `;
+    }
+
+    transcriptList.innerHTML = html;
+    transcriptScroll.scrollTop = transcriptScroll.scrollHeight;
+}
+
+function clearTranscripts() {
+    transcripts = [];
+    interimTranscript = '';
+    renderTranscripts();
+}
+
+function formatTime(date) {
+    return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
+// People Management
+function renderPeopleList() {
+    if (knownPeople.length === 0) {
+        peopleList.innerHTML = '<p style="text-align: center; color: #888; padding: 1rem;">No people registered yet</p>';
+        return;
+    }
+
+    let html = '';
+    knownPeople.forEach(person => {
+        html += `
+            <li class="person-item">
+                <button class="person-btn" data-id="${person.id}" ${!isStreaming ? 'disabled' : ''}>
+                    <div>
+                        <p class="person-name">${person.name}</p>
+                        <p class="person-rel">${person.relationship}</p>
+                    </div>
+                </button>
+                <button class="remove-btn" data-id="${person.id}">🗑️</button>
+            </li>
+        `;
+    });
+
+    peopleList.innerHTML = html;
+
+    // Add event listeners
+    document.querySelectorAll('.person-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const id = e.currentTarget.dataset.id;
+            const person = knownPeople.find(p => p.id === id);
+            if (person) selectPerson(person);
+        });
+    });
+
+    document.querySelectorAll('.remove-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const id = e.currentTarget.dataset.id;
+            removePerson(id);
+        });
+    });
+
+    savePeople();
+}
+
+function handleAddPerson(e) {
+    e.preventDefault();
+
+    const name = document.getElementById('personNameInput').value.trim();
+    const relationship = document.getElementById('relationshipSelect').value;
+
+    if (!name || !relationship) return;
+
+    const newPerson = {
+        id: `person_${Date.now()}`,
+        name: name,
+        relationship: relationship,
+        voiceId: `voice_${name.toLowerCase()}_${Date.now()}`,
+        threadId: ''
+    };
+
+    knownPeople.push(newPerson);
+    renderPeopleList();
+
+    // Create thread in Backboard
+    createThreadForPerson(newPerson);
+
+    // Reset form and close modal
+    addPersonForm.reset();
+    addPersonModal.style.display = 'none';
+}
+
+function removePerson(id) {
+    knownPeople = knownPeople.filter(p => p.id !== id);
+    renderPeopleList();
+
+    if (recognizedPerson?.id === id) {
+        personOverlay.style.display = 'none';
+        recognizedPerson = null;
+    }
+}
+
+function selectPerson(person) {
+    recognizedPerson = person;
+    fetchPersonContext(person);
+}
+
+function savePeople() {
+    localStorage.setItem('knownPeople', JSON.stringify(knownPeople));
+}
+
+// Person Context Display
+async function fetchPersonContext(person) {
+    if (!person.threadId) {
+        displayPersonInfo({
+            ...person,
+            lastVisit: 'First visit',
+            recentContext: 'This is the first recorded interaction with ' + person.name,
+            confidence: 1.0
+        });
+        return;
+    }
+
+    loadingOverlay.style.display = 'block';
+
+    try {
+        // In production, call your backend API
+        // const response = await fetch(`${API_BASE}/message/${person.threadId}`, {...});
+
+        // Demo data for now
+        setTimeout(() => {
+            displayPersonInfo({
+                ...person,
+                lastVisit: '2 days ago (Thursday)',
+                recentContext: 'Talked about Emma\'s school play where she played a flower. Lucas lost his first tooth yesterday.',
+                confidence: 0.95
+            });
+            loadingOverlay.style.display = 'none';
+        }, 1000);
+    } catch (error) {
+        console.error('Error fetching context:', error);
+        loadingOverlay.style.display = 'none';
+    }
+}
+
+function displayPersonInfo(person) {
+    document.getElementById('personName').textContent = person.name;
+    document.getElementById('personRelationship').textContent = person.relationship;
+    document.getElementById('lastVisit').textContent = person.lastVisit;
+    document.getElementById('recentContext').textContent = person.recentContext;
+    document.getElementById('confidenceValue').textContent = Math.round(person.confidence * 100) + '%';
+
+    personOverlay.style.display = 'block';
+}
+
+// Backboard API Functions (require backend server)
+async function createThreadForPerson(person) {
+    console.log('Creating thread for:', person.name);
+    // In production with backend:
+    // const response = await fetch(`${API_BASE}/create-thread/${ASSISTANT_ID}`, {
+    //     method: 'POST',
+    //     headers: { 'Content-Type': 'application/json' },
+    //     body: JSON.stringify({
+    //         metadata_: {
+    //             person_name: person.name,
+    //             relationship: person.relationship,
+    //             voice_id: person.voiceId
+    //         }
+    //     })
+    // });
+    // const data = await response.json();
+    // person.threadId = data.thread_id;
+    // savePeople();
+}
+
+async function storeTranscriptToBackboard(threadId, text, speaker) {
+    console.log('Storing transcript:', text);
+    // In production with backend:
+    // await fetch(`${API_BASE}/message/${threadId}`, {
+    //     method: 'POST',
+    //     headers: { 'Content-Type': 'application/json' },
+    //     body: JSON.stringify({
+    //         content: text,
+    //         memory: 'Auto',
+    //         send_to_llm: 'false',
+    //         metadata: JSON.stringify({ timestamp: new Date().toISOString(), speaker })
+    //     })
+    // });
+}
+
+// Demo: Simulate person detection after 5 seconds
+setTimeout(() => {
+    if (isStreaming && knownPeople.length > 0) {
+        console.log('Demo: Simulating person detection...');
+        selectPerson(knownPeople[0]);
+    }
 }, 5000);

@@ -8,95 +8,170 @@
 </head>
 <body>
     <div class="container">
-        <!-- Video Section -->
-        <div class="video-section">
-            <video id="video" autoplay playsinline></video>
+        <header class="header">
+            <h1>Memory Aid System</h1>
+            <p>Real-time conversation capture and context display</p>
+        </header>
 
-            <!-- Person Info Overlay -->
-            <div class="overlay-card" id="overlayCard">
-                <div class="person-header">
-                    <div class="avatar" id="avatar">👤</div>
-                    <div>
-                        <h2 class="person-name" id="personName">Loading...</h2>
-                        <p class="person-relationship" id="relationship">...</p>
+        <div class="grid">
+            <!-- Left Column: Camera Feed + Controls -->
+            <div class="col-left">
+                <!-- Camera Feed -->
+                <div class="camera-card" id="cameraCard">
+                    <video id="video" autoplay playsinline muted></video>
+
+                    <!-- Status Badge -->
+                    <div class="status-badge" id="statusBadge" style="display: none;">
+                        <span class="status-dot"></span>
+                        <span>Connected</span>
+                    </div>
+
+                    <!-- Person Context Overlay -->
+                    <div class="person-overlay" id="personOverlay" style="display: none;">
+                        <div class="person-header">
+                            <div class="person-icon">👤</div>
+                            <div class="person-info">
+                                <h3 id="personName">Loading...</h3>
+                                <p id="personRelationship">...</p>
+                            </div>
+                            <div class="person-meta">
+                                <div class="confidence">
+                                    <span class="confidence-label">Confidence</span>
+                                    <span class="confidence-value" id="confidenceValue">95%</span>
+                                </div>
+                                <button class="dismiss-btn" id="dismissBtn">✕</button>
+                            </div>
+                        </div>
+                        <div class="divider"></div>
+                        <div class="person-details">
+                            <div class="detail-item">
+                                <span class="detail-icon">🕐</span>
+                                <span class="detail-label">Last visit:</span>
+                                <span class="detail-value" id="lastVisit">...</span>
+                            </div>
+                            <div class="detail-item context">
+                                <span class="detail-icon">💬</span>
+                                <p class="context-text" id="recentContext">...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+                        <p>Loading memory context...</p>
+                    </div>
+
+                    <!-- Error/Placeholder State -->
+                    <div class="placeholder" id="placeholder">
+                        <div class="placeholder-icon">📹</div>
+                        <p>Click "Start Camera" to begin capturing video and audio</p>
                     </div>
                 </div>
 
-                <div class="info-section">
-                    <div class="info-item">
-                        <span class="info-label">Last Visit:</span>
-                        <span class="info-value" id="lastVisit">...</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Recent Context:</span>
-                        <p class="context-text" id="recentContext">...</p>
-                    </div>
-                </div>
-
-                <div class="confidence-badge" id="confidence">
-                    <span class="confidence-dot"></span>
-                    <span id="confidenceText">Identifying...</span>
+                <!-- Control Bar -->
+                <div class="control-bar">
+                    <button class="btn btn-primary" id="startBtn">
+                        <span>📹</span>
+                        Start Camera
+                    </button>
+                    <button class="btn btn-danger" id="stopBtn" style="display: none;">
+                        <span>⏹️</span>
+                        Stop Camera
+                    </button>
+                    <button class="btn btn-secondary" id="micBtn" disabled>
+                        <span>🎤</span>
+                        Unmute Mic
+                    </button>
+                    <button class="btn btn-ghost" id="clearBtn">
+                        <span>🗑️</span>
+                        Clear Transcripts
+                    </button>
                 </div>
             </div>
 
-            <!-- Status Indicator -->
-            <div class="status" id="status">
-                <div class="status-dot"></div>
-                <span>System Active</span>
-            </div>
+            <!-- Right Column: People Manager + Transcription -->
+            <div class="col-right">
+                <!-- People Manager -->
+                <div class="card people-card">
+                    <div class="card-header">
+                        <h2>👥 Known People</h2>
+                        <button class="btn btn-sm" id="addPersonBtn">
+                            <span>➕</span>
+                            Add Person
+                        </button>
+                    </div>
+                    <div class="card-content">
+                        <ul class="people-list" id="peopleList">
+                            <li class="person-item">
+                                <button class="person-btn" data-id="sarah_001">
+                                    <div>
+                                        <p class="person-name">Sarah</p>
+                                        <p class="person-rel">Daughter</p>
+                                    </div>
+                                </button>
+                                <button class="remove-btn" data-id="sarah_001">🗑️</button>
+                            </li>
+                        </ul>
+                        <p class="people-hint" id="peopleHint" style="display: none;">
+                            Click a person to manually identify the current speaker
+                        </p>
+                    </div>
+                </div>
 
-            <!-- Controls -->
-            <div class="controls">
-                <button class="btn btn-stop" id="stopBtn">
-                    <div class="stop-icon"></div>
-                    Stop System
-                </button>
-                <button class="btn btn-record" id="recordBtn" style="display:none;">
-                    <div class="record-icon"></div>
-                    Recording
-                </button>
+                <!-- Transcription Panel -->
+                <div class="card transcript-card">
+                    <div class="card-header">
+                        <h2>Live Transcription</h2>
+                        <span class="listening-status" id="listeningStatus">
+                            <span>🎤</span>
+                            <span>Not listening</span>
+                        </span>
+                    </div>
+                    <div class="card-content transcript-content">
+                        <div class="transcript-scroll" id="transcriptScroll">
+                            <p class="transcript-empty" id="transcriptEmpty">
+                                Start the camera to begin transcription
+                            </p>
+                            <div class="transcript-list" id="transcriptList"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
+    </div>
 
-        <!-- Sidebar Panel -->
-        <div class="sidebar">
-            <div class="sidebar-header">
-                <h1>Memory Aid</h1>
-                <p>Real-time visitor recognition</p>
+    <!-- Add Person Modal -->
+    <div class="modal" id="addPersonModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Register New Person</h2>
+                <button class="modal-close" id="modalClose">✕</button>
             </div>
-
-            <!-- Setup Section -->
-            <div class="setup-section">
-                <h3>Configuration</h3>
-                <div class="input-group">
-                    <label>Backboard API Key</label>
-                    <input type="password" id="apiKey" placeholder="espr_...">
+            <form id="addPersonForm">
+                <div class="form-group">
+                    <label for="personNameInput">Name</label>
+                    <input type="text" id="personNameInput" placeholder="Enter person's name" required>
                 </div>
-                <div class="input-group">
-                    <label>Assistant ID</label>
-                    <input type="text" id="assistantId" placeholder="asst_...">
+                <div class="form-group">
+                    <label for="relationshipSelect">Relationship</label>
+                    <select id="relationshipSelect" required>
+                        <option value="">Select relationship</option>
+                        <option value="Daughter">Daughter</option>
+                        <option value="Son">Son</option>
+                        <option value="Spouse">Spouse</option>
+                        <option value="Grandchild">Grandchild</option>
+                        <option value="Friend">Friend</option>
+                        <option value="Caregiver">Caregiver</option>
+                        <option value="Doctor">Doctor</option>
+                        <option value="Neighbor">Neighbor</option>
+                        <option value="Other">Other</option>
+                    </select>
                 </div>
-                <div class="input-group">
-                    <label>Thread ID (Sarah)</label>
-                    <input type="text" id="threadId" placeholder="thread_...">
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" id="modalCancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Person</button>
                 </div>
-                <button class="btn btn-primary" id="saveConfig">Save Configuration</button>
-            </div>
-
-            <!-- Quick Setup -->
-            <div class="setup-section">
-                <h3>Quick Setup</h3>
-                <button class="btn btn-secondary" id="createAssistant">Create Assistant</button>
-                <button class="btn btn-secondary" id="createThread">Create Thread for Sarah</button>
-            </div>
-
-            <!-- Activity Log -->
-            <div class="activity-log">
-                <h3>Activity Log</h3>
-                <div id="logContainer" class="log-container">
-                    <p class="log-item">System initialized...</p>
-                </div>
-            </div>
+            </form>
         </div>
     </div>
 
